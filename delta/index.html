@@ -2461,10 +2461,10 @@ var OPMAP={};OPERATORS.forEach(function(o){OPMAP[o.id]=o;});OPMAP.falcon.pk='spe
 var G={state:'boot',set:null,time:0,enemies:[],loot:[],bag:[],stats:{}};
 var QP={low:{pr:1.25,shadow:0,shR:0,far:140,aa:false},mid:{pr:1.6,shadow:1024,shR:38,far:180,aa:false},high:{pr:2,shadow:2048,shR:55,far:230,aa:true}};
 var Q;var SAVE;
-function defSave(){return {v:2,coins:150000,stash:[makeGunItem('qsz92'),makeGunItem('mp5'),makeGearItem('h2'),makeLoot(LOOT[0]),makeLoot(LOOT[2])],
+function defSave(){return {v:2,coins:1000000,mig1m:1,stash:[makeGunItem('qsz92'),makeGunItem('mp5'),makeGearItem('h2'),makeLoot(LOOT[0]),makeLoot(LOOT[2])],
  ld:{g1:makeGunItem('m4a1'),g2:makeGunItem('g18'),helmet:makeGearItem('h2'),armor:makeGearItem('a2'),bag:makeGearItem('b2'),meds:2,nades:1,op:'falcon'},map:'dam',mode:'normal',stats:{raids:0,ext:0,kills:0,best:0},
  set:{sens:1,fov:isTouch?74:78,vol:.8,q:isTouch?'mid':'high',kc:1,assist:1,voice:1,dmgnum:1,vib:1}};}
-function loadGame(){try{var s=JSON.parse(localStorage.getItem(SAVE_KEY)||'null');if(s&&s.v===2&&s.ld&&s.stash){var d=defSave();for(var k in d.set)if(s.set[k]==null)s.set[k]=d.set[k];return s;}}catch(e){}return defSave();}
+function loadGame(){try{var s=JSON.parse(localStorage.getItem(SAVE_KEY)||'null');if(s&&s.v===2&&s.ld&&s.stash){var d=defSave();for(var k in d.set)if(s.set[k]==null)s.set[k]=d.set[k];if(!s.mig1m){s.mig1m=1;if((s.coins||0)<1000000)s.coins=1000000;try{localStorage.setItem(SAVE_KEY,JSON.stringify(s));}catch(e){}}return s;}}catch(e){}return defSave();}
 function saveGame(){try{localStorage.setItem(SAVE_KEY,JSON.stringify(SAVE));}catch(e){}}
 // ===== renderer =====
 function initRenderer(){var r=new THREE.WebGLRenderer({antialias:Q.aa,powerPreference:'high-performance'});r.setPixelRatio(Math.min(devicePixelRatio||1,Q.pr));r.setSize(innerWidth,innerHeight);r.autoClear=false;r.outputColorSpace=THREE.SRGBColorSpace;r.toneMapping=THREE.ACESFilmicToneMapping;r.toneMappingExposure=1.08;
