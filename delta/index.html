@@ -1763,10 +1763,10 @@ function playerUpdate(dt){var W=G.world,s=curS(),w=s.w;
 function startReload(){var s=curS(),w=s.w;if(s.reloadT>0||s.mag>=w.mag||s.res<=0||P.healT>0)return;if(s.res<=0){HUD.toast('弹药耗尽');return;}s.reloadT=(w.mode==='pump'?.55:w.reload*(OPMAP[P.op].pk==='reload'?.8:1))*(P.reloadMul||1);if(Math.random()<.35)opBark('reload');s.reloadDur=s.reloadT;s.burst=0;P.ads=Math.min(P.ads,.3);s.wasEmpty=s.mag===0;if(w.mode==='pump')AUD.reload('shell');else AUD.rel('cloth',.35);}
 var RLD={mag:[[.08,'magRel',.6],[.22,'magOut',.8],[.7,'magIn',.95],[.86,'chBack',.8,1],[.93,'chFwd',.95,1]],pistol:[[.08,'magRel',.6],[.25,'magOut',.7],[.68,'magIn',.9],[.88,'slideRel',.9,1]],belt:[[.06,'boltBack',.7],[.2,'magRel',.7],[.32,'magOut',.8],[.62,'magIn',.95],[.78,'cloth',.4],[.9,'chFwd',.9]],clip:[[.1,'boltUp',.6],[.2,'boltBack',.7],[.5,'shellIn',.7],[.62,'shellIn',.7],[.74,'shellIn',.7],[.86,'boltFwd',.8],[.93,'boltDown',.8]]};
 function reloadSfx(s,w,dt){if(w.mode==='pump'||!s.reloadDur)return;var seq=w.cat==='pistol'?RLD.pistol:w.cat==='lmg'?RLD.belt:(w.mode==='bolt'&&w.m.mag==='none')?RLD.clip:RLD.mag;var p0=1-s.reloadT/s.reloadDur,p1=1-(s.reloadT-dt)/s.reloadDur;for(var i=0;i<seq.length;i++){var e=seq[i];if(e[0]>p0&&e[0]<=p1){if(e[3]&&!s.wasEmpty&&w.mode!=='bolt')continue;AUD.rel(e[1],e[2]);}}}
-function camDir(out){var cp=Math.cos(P.pitch+P.sway[1]);var y=P.yaw+P.sway[0];return out.set(-Math.sin(y)*cp,Math.sin(P.pitch+P.sway[1]),-Math.cos(y)*cp);}
+function camDir(out){var ap=P.pitch+P.sway[1]+(G.aimOffP||0),cp=Math.cos(ap);var y=P.yaw+P.sway[0]+(G.aimOffY||0);return out.set(-Math.sin(y)*cp,Math.sin(ap),-Math.cos(y)*cp);}
 function firePlayer(s){var w=s.w,W=G.world;s.mag--;P.lastShot=G.time;
- var ads=P.ads,sp=lerp(w.spread[0],w.spread[1],ads)*(P.moving?(P.sprint?2:1.45):1)*(P.crouch>.5?.75:1)*(P.onGround?1:2.2);if(isScope())sp=w.spread[1]*(P.moving?3:1);
- camDir(_rd);_ro.set(P.x,P.eye,P.z);var pel=w.pellets||1;var shotRes=null;
+ var ads=P.ads,sp=lerp(w.spread[0],w.spread[1],ads)*(P.moving?(P.sprint?2:1.45):1)*(P.crouch>.5?.75:1)*(P.onGround?1:2.2);if(isScope())sp=P.moving?w.spread[1]*3:0;
+ camDir(_rd);_ro.set(P.x,P.eye,P.z);var pel=w.pellets||1;var shotRes=null;if(w.vel>0&&ads>.5)zeroAim(_ro,_rd,w.vel);
  for(var i=0;i<pel;i++){var d=_rv.copy(_rd);if(sp>0){var a=Math.random()*TAU,r=Math.sqrt(Math.random())*sp;var ux=Math.cos(P.yaw),uz=-Math.sin(P.yaw);d.x+=ux*Math.cos(a)*r;d.z+=uz*Math.cos(a)*r;d.y+=Math.sin(a)*r;d.normalize();}
   if(w.vel>0){shotRes=fireProjectile(_ro,d,w,s);}else{var res=traceShot(_ro.x,_ro.y,_ro.z,d.x,d.y,d.z,w.cat==='shotgun'?60:260,w);applyShot(res,w,_ro,d,i===0||pel<4);}}
  // recoil
@@ -1794,7 +1794,8 @@ function applyShot(res,w,o,d,fx,extra){var dist=res.t;
  var wh=res.wh;if(wh){FX.impact(wh.x,wh.y,wh.z,wh.n,wh.surf,false);noise(wh.x,wh.z,10,.6);}
  if(fx){var end=wh?_v3.set(wh.x,wh.y,wh.z):_v3.copy(o).addScaledVector(d,res.t);FX.tracer(_v2.set(o.x,o.y-.08,o.z).addScaledVector(d,2.5),end,0xffe0a0);}return 0;}
 // projectile: precompute trajectory with drop
-var GRAV_B=9.8*2.2;
+var GRAV_B=9.8;
+function zeroAim(o,d,vel){var r=traceShot(o.x,o.y,o.z,d.x,d.y,d.z,800,null),R=Math.max(5,Math.min(800,r.t||800)),t=R/vel,drop=.5*GRAV_B*t*t;d.y+=drop/R*Math.sqrt(d.x*d.x+d.z*d.z);d.normalize();}
 function simTrajectory(o,d,vel,maxT){var pts=[[o.x,o.y,o.z]],x=o.x,y=o.y,z=o.z,vx=d.x*vel,vy=d.y*vel,vz=d.z*vel,t=0,st=1/120,res=null,len=0;
  while(t<maxT){var nx=x+vx*st,ny=y+vy*st,nz=z+vz*st;vy-=GRAV_B*st;var sx=nx-x,sy=ny-y,sz=nz-z,sl=Math.sqrt(sx*sx+sy*sy+sz*sz);var r=traceShot(x,y,z,sx/sl,sy/sl,sz/sl,sl,null);
   if(r.hitE||r.wh){r.t+=len;res=r;var hp=r.hitE?r.pt:new THREE.Vector3(r.wh.x,r.wh.y,r.wh.z);pts.push([hp.x,hp.y,hp.z]);res.dirv=new THREE.Vector3(sx/sl,sy/sl,sz/sl);break;}
@@ -2575,7 +2576,7 @@ KC.end=function(){if(!G.kcActive)return;G.kcActive=false;if(this.e)setXray(this.
 function setCam(){var c=G.cam;if(P.dead){var t=clamp(P.deadT/1.2,0,1);c.position.set(P.x,lerp(P.eye,P.y+.25,t*t),P.z);c.rotation.set(P.pitch*(1-t)-t*.3,P.yaw,t*.9);return;}
  var tr=Math.min(1.2,(P.trauma||0)+P.shake*.5),s2=tr*tr,tt=performance.now()/1000,n1=(Math.sin(tt*43.1)+Math.sin(tt*27.7+1.3))*.5,n2=(Math.sin(tt*38.3+2.1)+Math.sin(tt*22.9+.4))*.5,n3=Math.sin(tt*31.3+4.2);
  c.position.set(P.x+n1*s2*.018,P.eye+n2*s2*.018+(P.onGround&&P.moving?Math.abs(Math.sin(P.bob))*.03*(1-P.ads*.8):0),P.z);
- c.rotation.set(P.pitch+P.sway[1]+(P.vk||0)+n2*s2*.014,P.yaw+P.sway[0]+n1*s2*.014,(P.sprint?Math.sin(P.bob*.5)*.01:0)+(P.vr||0)+n3*s2*.022);var f=curFov()+(P.ads<.5?(G.fovPunch||0):0);if(Math.abs(c.fov-f)>.01){c.fov=f;c.updateProjectionMatrix();}}
+ G.aimOffP=(P.vk||0)+n2*s2*.014;G.aimOffY=n1*s2*.014;c.rotation.set(P.pitch+P.sway[1]+G.aimOffP,P.yaw+P.sway[0]+G.aimOffY,(P.sprint?Math.sin(P.bob*.5)*.01:0)+(P.vr||0)+n3*s2*.022);var f=curFov()+(P.ads<.5?(G.fovPunch||0):0);if(Math.abs(c.fov-f)>.01){c.fov=f;c.updateProjectionMatrix();}}
 // aim assist (touch)
 function aimAssist(dt){if(!G.set.assist||!isTouch||P.dead)return;var cd=camDir(_rd),best=null,ba=P.ads>.5?.045:.07;for(var i=0;i<G.enemies.length;i++){var e=G.enemies[i];if(e.dead||!e.seen)continue;var dx=e.x-P.x,dy=e.y+1.25-P.eye,dz=e.z-P.z,d=Math.sqrt(dx*dx+dy*dy+dz*dz);if(d>120)continue;var a=Math.acos(clamp((dx*cd.x+dy*cd.y+dz*cd.z)/d,-1,1));if(a<ba){ba=a;best=[dx,dy,dz,d];}}
  if(!best)return;var ty=Math.atan2(-best[0],-best[2]),tp=Math.asin(best[1]/best[3]);var k=Math.min(1,dt*(IN.fire?3.2:1.6));P.yaw+=angWrap(ty-P.yaw)*k*.5;P.pitch+=(tp-P.pitch)*k*.35;}
@@ -2606,7 +2607,7 @@ function boot(){SAVE=loadGame();G.set=SAVE.set;Q=QP[G.set.q]||QP.mid;
    if(/MicroMessenger/i.test(navigator.userAgent))tip('建议点击右上角，用 Safari 打开以获得最佳体验');},30);},30);}
 window.onerror=function(m,s,l,c,e){console.error('ERR',m,l,c);};
 boot();
-window.__dr={G:G,IN:IN,get P(){return P;},get SAVE(){return SAVE;},startRaid:startRaid,endRaid:endRaid,KC:KC,UI:UI,HUD:HUD,MAPS:MAPS,toLobby:toLobby,saveGame:saveGame,fireProjectile:fireProjectile,simTrajectory:simTrajectory,THREE:THREE,curS:curS,isScope:isScope,useSkill:useSkill,AUD:AUD,setVM:setVM,WMAP:WMAP,explode:explode,initSkill:initSkill,enemyHurt:enemyHurt,LOBBY:LOBBY,EP:EP,SMOKES:SMOKES,spawnSmoke:spawnSmoke};
+window.__dr={G:G,IN:IN,get P(){return P;},get SAVE(){return SAVE;},startRaid:startRaid,endRaid:endRaid,KC:KC,UI:UI,HUD:HUD,MAPS:MAPS,toLobby:toLobby,saveGame:saveGame,fireProjectile:fireProjectile,simTrajectory:simTrajectory,THREE:THREE,curS:curS,isScope:isScope,useSkill:useSkill,AUD:AUD,setVM:setVM,WMAP:WMAP,zeroAim:zeroAim,camDir:camDir,traceShot:traceShot,explode:explode,initSkill:initSkill,enemyHurt:enemyHurt,LOBBY:LOBBY,EP:EP,SMOKES:SMOKES,spawnSmoke:spawnSmoke};
 
 })();</script>
 </body>
