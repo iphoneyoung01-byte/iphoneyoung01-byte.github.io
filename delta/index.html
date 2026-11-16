@@ -674,7 +674,7 @@ function rollContainer(type,tierBonus){var c=CTYPES[type],n=rndi(c.n[0],c.n[1]),
  return out;}
 function itemInfo(it){
  if(it.t==='loot')return {name:it.name,icon:it.icon,value:it.value,size:it.size,rar:it.rar};
- if(it.t==='gun'){var w=WMAP[it.gid];return {name:w.name,icon:'🔫',img:GUNTHUMB[w.id],value:Math.round(w.price*.6)||300,size:w.size,rar:w.price>=150000?4:w.price>=80000?3:w.price>=40000?2:w.price>0?1:0,gun:w};}
+ if(it.t==='gun'){var w=WMAP[it.gid];var na=it.att?Object.keys(it.att).filter(function(k){return it.att[k];}).length:0;return {name:w.name+(na?' ·改'+na:''),icon:'🔫',img:GUNTHUMB[w.id],value:(Math.round(w.price*.6)||300)+attVal(it),size:w.size,rar:w.price>=150000?4:w.price>=80000?3:w.price>=40000?2:w.price>0?1:0,gun:na?effW(it):w};}
  var g=GEAR[it.gid];var f=g.dur?clamp(it.dur/g.dur,0,1):1;return {name:g.name,icon:g.icon,value:Math.round(g.price*.6*(.3+.7*f)),size:g.kind==='bag'?2:2,rar:g.price>=60000?4:g.price>=30000?3:g.price>=15000?2:1,gear:g,dur:it.dur};
 }
 var GUNTHUMB={};
@@ -818,7 +818,7 @@ function limb(a,b,t,c,pl){var dx=b[0]-a[0],dy=b[1]-a[1],dz=b[2]-a[2],len=Math.sq
 
 // ===== GUN =====
 function liftC(c){var r=(c>>16)&255,g=(c>>8)&255,b=c&255,mx=Math.max(r,g,b);if(mx>=46)return c;var k=46/Math.max(1,mx);if(mx<8)return 0x2a2b2d;return (Math.min(255,Math.round(r*k))<<16)|(Math.min(255,Math.round(g*k))<<8)|Math.min(255,Math.round(b*k));}
-function gunParts(w){
+function gunParts0(w){
  var m=w.m,P=[],M=[],c1=liftC(m.c1),c2=liftC(m.c2||0x1d1e20),dk=0x1d1f21,wd=m.wood||c2;var tipZ,sightY=.08,scope=null,ret=null,hg=0;
  if(m.t==='pistol'){var k=m.big?1.22:1;
   P.push(Bx(.034*k,.04*k,.19*k,0,.045,-.06,c1),Bx(.032,.026,.17*k,0,.012,-.055,c2),Bx(.032,.11,.05,0,-.045,.03,c2,.28),Bx(.008,.006,.05,0,-.012,-.035,dk),
@@ -1033,6 +1033,81 @@ function buildViewmodel(wid,look){
 function makeGunEnv(r){try{var sc=new THREE.Scene(),g=new THREE.SphereGeometry(5,24,12),col=[],p=g.attributes.position;for(var i=0;i<p.count;i++){var y=p.getY(i)/5,t=clamp(y*.5+.5,0,1);var c=new THREE.Color().setRGB(lerp(.18,.85,t*t),lerp(.17,.88,t*t),lerp(.15,.95,t*t));col.push(c.r,c.g,c.b);}g.setAttribute('color',new THREE.Float32BufferAttribute(col,3));
  sc.add(new THREE.Mesh(g,new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.BackSide})));var pm=new THREE.MeshBasicMaterial({color:0xffffff});[[2,3,-1,2.5],[-3,2,2,1.6],[0,-1,-4,1.2]].forEach(function(a){var m=new THREE.Mesh(new THREE.PlaneGeometry(a[3],a[3]*.6),pm);m.position.set(a[0],a[1],a[2]);m.lookAt(0,0,0);sc.add(m);});
  var pg=new THREE.PMREMGenerator(r),rt=pg.fromScene(sc,.04);pg.dispose();return rt.texture;}catch(e){return null;}}
+// ---- 04m_mods.js
+// ===== v5 WEAPON MODDING: attachments data, effective weapon stats, attachment models =====
+var ATT_SLOTS=['muzzle','barrel','grip','stock','mag','optic'];
+var ATT_SLOTN={muzzle:['枪口','MUZZLE'],barrel:['枪管','BARREL'],grip:['握把','GRIP'],stock:['枪托','STOCK'],mag:['弹匣','MAG'],optic:['瞄具','OPTIC']};
+var ATT_ICON={muzzle:'◉',barrel:'═',grip:'┃',stock:'◣',mag:'▮',optic:'◎'};
+// s: rec(all recoil) recV recH sprH(hip) sprA(ads) ads(ADS speed mul) rng(falloff start +m) vel(mul) move(+) magK reload(mul) supp noflash
+var ATTS=[
+ {id:'sup_s',slot:'muzzle',name:'轻型消音器',price:18000,cats:['pistol','smg'],s:{supp:1,rec:.95,rng:-10},d:'大幅降低枪声与枪口火光，敌人难以定位'},
+ {id:'sup_r',slot:'muzzle',name:'战术消音器',price:32000,cats:['ar','dmr','lmg','sniper'],s:{supp:1,rec:.92,rng:-15,vel:.97},d:'步枪用消音器，压低枪声，略降射程'},
+ {id:'comp',slot:'muzzle',name:'枪口补偿器',price:14000,cats:['smg','ar','lmg','dmr'],s:{recV:.8,recH:.92,ads:.97},d:'抑制枪口上跳，连射更稳'},
+ {id:'fh',slot:'muzzle',name:'消焰器',price:8000,cats:['smg','ar','lmg','dmr','sniper'],s:{noflash:1,rec:.94},d:'隐藏枪口火光，减轻后坐'},
+ {id:'mbrk',slot:'muzzle',name:'重型制退器',price:22000,cats:['dmr','sniper'],s:{rec:.74,ads:.96},d:'大口径制退器，显著降低后坐'},
+ {id:'choke',slot:'muzzle',name:'霰弹收束器',price:9000,cats:['shotgun'],s:{sprH:.7,sprA:.7,rng:10},d:'弹丸更集中，有效距离更远'},
+ {id:'bl_long',slot:'barrel',name:'加长枪管',price:26000,cats:['smg','ar','lmg','dmr','sniper','shotgun'],s:{rng:40,sprA:.8,vel:1.1,ads:.88,move:-.02},d:'更远的有效射程与更好的远距精度，开镜变慢'},
+ {id:'bl_short',slot:'barrel',name:'短突击枪管',price:15000,cats:['smg','ar','lmg','shotgun'],s:{ads:1.15,move:.02,rng:-15,sprH:.9},d:'近战取向：开镜更快、腰射更准，射程变短'},
+ {id:'bl_heavy',slot:'barrel',name:'重型浮置枪管',price:30000,cats:['ar','lmg','dmr','sniper'],s:{rec:.88,sprA:.85,ads:.9,move:-.03},d:'更稳更准，但更重'},
+ {id:'gr_v',slot:'grip',name:'垂直前握把',price:9000,cats:['smg','ar','lmg','dmr','shotgun'],s:{recV:.85},d:'降低垂直后坐'},
+ {id:'gr_a',slot:'grip',name:'斜角握把',price:11000,cats:['smg','ar','lmg','dmr','shotgun'],s:{ads:1.12,recH:.8},d:'开镜更快，降低水平晃动'},
+ {id:'gr_s',slot:'grip',name:'短握把',price:8000,cats:['smg','ar','dmr','shotgun','sniper'],s:{sprH:.85,rec:.94},d:'腰射更准，后坐略降'},
+ {id:'st_t',slot:'stock',name:'战术伸缩枪托',price:16000,cats:['smg','ar','lmg','dmr','shotgun','sniper'],s:{rec:.88,sprH:.92},d:'全面提升稳定性'},
+ {id:'st_h',slot:'stock',name:'重型精确枪托',price:22000,cats:['ar','lmg','dmr','sniper'],s:{rec:.78,ads:.9,move:-.02},d:'后坐大幅降低，但更笨重'},
+ {id:'st_l',slot:'stock',name:'轻型骨架枪托',price:12000,cats:['smg','ar','shotgun','dmr'],s:{ads:1.12,move:.02,rec:1.06},d:'更灵活，稳定性略降'},
+ {id:'mg_e',slot:'mag',name:'扩容弹匣',price:14000,cats:['pistol','smg','ar','shotgun','dmr','sniper'],s:{magK:1.5,reload:1.1},d:'弹匣容量 +50%，换弹略慢'},
+ {id:'mg_d',slot:'mag',name:'大容量弹鼓',price:30000,cats:['smg','ar'],s:{magK:2.5,reload:1.35,move:-.03},d:'超大容量，换弹慢、更重'},
+ {id:'mg_f',slot:'mag',name:'快拔并联弹匣',price:12000,cats:['pistol','smg','ar','lmg','dmr','sniper'],s:{reload:.75},d:'换弹速度 +25%'},
+ {id:'op_rd',slot:'optic',name:'红点瞄准镜',price:6000,cats:['pistol','smg','ar','shotgun','lmg','dmr'],s:{optic:'reddot',adsFov:52},d:'1 倍红点，视野清晰'},
+ {id:'op_holo',slot:'optic',name:'全息瞄准镜',price:9000,cats:['smg','ar','shotgun','lmg','dmr'],s:{optic:'holo',adsFov:50},d:'1 倍全息环形分划'},
+ {id:'op_acog',slot:'optic',name:'3倍 ACOG',price:24000,cats:['smg','ar','lmg','dmr'],s:{optic:'acog',zoom:[3],adsFov:38},d:'3 倍中距离瞄具'},
+ {id:'op_4x',slot:'optic',name:'4倍战术镜',price:38000,cats:['ar','lmg','dmr','sniper'],s:{optic:'scope',zoom:[4,2],adsFov:30},d:'4/2 倍可切换'},
+ {id:'op_8x',slot:'optic',name:'8倍狙击镜',price:60000,cats:['dmr','sniper'],s:{optic:'bigscope',zoom:[8,4],adsFov:20},d:'8/4 倍远距离狙击镜'}
+];
+var ATTMAP={};ATTS.forEach(function(a){ATTMAP[a.id]=a;});
+function attFits(a,w){if(a.cats.indexOf(w.cat)<0)return false;var m=w.m;
+ if(a.slot==='mag'&&(m.mag==='none'||m.mag==='box'||m.mag==='top')&&a.id!=='mg_f')return false;
+ if(a.slot==='mag'&&m.mag==='tube'&&a.id!=='mg_e')return false;
+ if(a.id==='mg_d'&&(m.t==='bullpup'))return false;
+ if(a.slot==='stock'&&m.t==='bullpup')return false;
+ if(a.slot==='grip'&&m.t==='sniper'&&a.id!=='gr_s')return false;
+ return true;}
+function attsFor(w,slot){return ATTS.filter(function(a){return a.slot===slot&&attFits(a,w);});}
+function slotsFor(w){return ATT_SLOTS.filter(function(s){return attsFor(w,s).length>0;});}
+function attVal(it){var v=0;if(it&&it.att)for(var k in it.att){var a=ATTMAP[it.att[k]];if(a)v+=Math.round(a.price*.6);}return v;}
+function effW(it){var b=WMAP[it&&it.gid]||WMAP.g18;if(!it||!it.att)return b;var ids=[];ATT_SLOTS.forEach(function(s){var a=ATTMAP[it.att[s]];if(a&&attFits(a,b))ids.push(a.id);});if(!ids.length)return b;
+ var key=b.id+'+'+ids.join('+');if(WMAP[key])return WMAP[key];var n=JSON.parse(JSON.stringify(b));n.id=key;n.base=b.id;n.atts=ids;n.adsK=1;n.rngB=0;
+ ids.forEach(function(id){var s=ATTMAP[id].s,m=n.m;
+  if(s.rec){n.recoil[0]*=s.rec;n.recoil[1]*=s.rec;}if(s.recV)n.recoil[0]*=s.recV;if(s.recH)n.recoil[1]*=s.recH;
+  if(s.sprH)n.spread[0]*=s.sprH;if(s.sprA)n.spread[1]*=s.sprA;if(s.ads)n.adsK*=s.ads;if(s.rng)n.rngB+=s.rng;if(s.vel&&n.vel)n.vel=Math.round(n.vel*s.vel);if(s.move)n.move=+(n.move+s.move).toFixed(3);
+  if(s.magK)n.mag=Math.max(n.mag+1,Math.round(n.mag*s.magK));if(s.reload)n.reload=+(n.reload*s.reload).toFixed(2);
+  if(s.supp){n.supp=true;m.supp=1;m.brake=0;}if(s.noflash){n.noflash=true;m.fh=1;m.brake=0;}
+  if(id==='comp'){m.brake=1;m.supp=0;n.supp=false;}if(id==='mbrk'){m.brake=2;m.supp=0;n.supp=false;}if(id==='choke')m.choke=1;
+  if(id==='bl_long')m.B=+(m.B+.1).toFixed(3);if(id==='bl_short')m.B=Math.max(.05,+(m.B-.06).toFixed(3));if(id==='bl_heavy')m.hb=1;
+  if(ATTMAP[id].slot==='grip')m.grip=id;if(ATTMAP[id].slot==='stock')m.stock={st_t:'skeleton',st_h:'fixed',st_l:'folding'}[id]||m.stock,m.stk=id;
+  if(id==='mg_e')m.mext=1;if(id==='mg_d'){m.mag='drum';}if(id==='mg_f')m.mfast=1;
+  if(s.optic){m.optic=s.optic;n.optic=s.optic;n.adsFov=Math.min(n.adsFov,s.adsFov)||s.adsFov;if(s.optic==='reddot'||s.optic==='holo')n.adsFov=Math.max(s.adsFov,Math.min(b.adsFov,60));if(s.zoom)n.zoom=s.zoom.slice();else delete n.zoom;}
+ });
+ n.name=b.name.replace(/\s.*$/,'')+' 改';WMAP[key]=n;return n;}
+// wrap gun model builder (original renamed gunParts0)
+function gunParts(w){var gp=gunParts0(w),m=w.m;if(!w.atts)return gp;var P=gp.P,M=gp.M,dk=0x1b1c1e,tip=gp.tip,hg=gp.hg;
+ if(m.t==='pistol'){var k=m.big?1.22:1;
+  if(m.supp){P.push(Cy(.036,.15,0,tip[1],tip[2]-.075,0x222426,PI/2),Cy(.039,.014,0,tip[1],tip[2]-.003,0x2e3033,PI/2));tip[2]-=.15;}
+  if(m.optic==='reddot'){P.push(Bx(.026,.012,.04,0,.078*k,-.02,dk),Bx(.026,.03,.006,0,.096*k,-.035,dk),Bx(.004,.03,.04,.012,.096*k,-.02,dk),Bx(.004,.03,.04,-.012,.096*k,-.02,dk));gp.sightY=.1*k;gp.ret={t:'dot',z:-.04};}
+  if(m.mext)M.push(Bx(.03,.045,.042,0,-.125,.042,dk,.28));if(m.mfast)M.push(Bx(.032,.014,.046,0,-.11,.044,0xc4a020,.28));
+  return gp;}
+ if(m.fh){P.push(Cy(.034,.07,0,tip[1],tip[2]-.035,dk,PI/2));for(var i=0;i<4;i++){var a=i*PI/2;P.push(Bx(.004,.004,.05,Math.cos(a)*.017,tip[1]+Math.sin(a)*.017,tip[2]-.04,0x050505));}tip[2]-=.07;}
+ if(m.choke){P.push(Cy(.04,.05,0,tip[1],tip[2]-.025,0x3a3a3a,PI/2));tip[2]-=.05;}
+ if(m.hb){var hz=gp.hg;P.push(Cy(.038,.14,0,.022,tip[2]+.2,0x232527,PI/2));}
+ var gy=-.03,gz=hg+.02;
+ if(m.grip==='gr_v')P.push(Bx(.028,.1,.03,0,gy-.06,gz,dk),Cy(.034,.012,0,gy-.115,gz,dk),Bx(.03,.012,.06,0,gy-.008,gz,0x2a2c2e));
+ else if(m.grip==='gr_a')P.push(Bx(.03,.04,.1,0,gy-.025,gz+.01,dk,-.55),Bx(.03,.012,.08,0,gy-.006,gz,0x2a2c2e));
+ else if(m.grip==='gr_s')P.push(Bx(.026,.05,.03,0,gy-.035,gz,dk),Bx(.03,.012,.05,0,gy-.008,gz,0x2a2c2e));
+ if(m.stk==='st_h')P.push(Bx(.03,.03,.12,0,.065,.22,dk),Bx(.054,.13,.03,0,-.01,.335,0x111111));
+ if(m.stk==='st_t')P.push(Bx(.052,.13,.026,0,-.0,.325,0x141414));
+ if(m.mext){var mp=gp.magPos;M.push(Bx(.034,.06,.064,mp[0],mp[1]-.1,mp[2]+.012,dk,.15),Bx(.036,.012,.068,mp[0],mp[1]-.135,mp[2]+.02,0x2a2c2e,.15));}
+ if(m.mfast){var mp2=gp.magPos;M.push(Bx(.032,.15,.066,mp2[0]+.036,mp2[1],mp2[2],dk,.08),Bx(.07,.03,.07,mp2[0]+.018,mp2[1]+.01,mp2[2],0x6a5a2a,.08));}
+ gp.tip=tip;return gp;}
 // ---- 05_world.js
 var STEP=0.5;
 function World(theme){this.theme=theme;this.S=theme.S||80;this.batches={};this.solids=[];this.scene=new THREE.Scene();this.dyn=[];this.lootSpots=[];this.extracts=[];this.spawns=[];this.espots=[];this.perches=[];this.rng=mulberry(theme.seed||7);this.flags={};}
@@ -1699,7 +1774,7 @@ var P={};var _rc=new THREE.Raycaster(),_rv=new THREE.Vector3(),_rd=new THREE.Vec
 function initPlayer(sp,ld){var hasP=!!ld.p;P={x:sp.x,y:G.world.H(sp.x,sp.z),z:sp.z,vx:0,vz:0,vy:0,yaw:Math.atan2(sp.x,sp.z),pitch:0,crouch:0,crouchOn:false,hp:100,maxHp:100,dead:false,deadT:0,sprint:false,moving:false,onGround:true,lastShot:-99,stepT:0,
  helmet:ld.helmet?JSON.parse(JSON.stringify(ld.helmet)):null,armor:ld.armor?JSON.parse(JSON.stringify(ld.armor)):null,bagSlots:(ld.bag?GEAR[ld.bag.gid].slots:0)+POCKET,
  slots:[],cur:0,nades:ld.nades||0,meds:ld.meds||0,ads:0,adsOn:false,zi:0,breath:1,breathLock:0,holding:false,recP:0,recY:0,healT:0,swapT:0,bob:0,shake:0,supp:0,sway:[0,0],eye:1.65,kick:0,roll:0,op:ld.op};
- [ld.g1,ld.g2].forEach(function(g){if(!g)return;var w=WMAP[g.gid];P.slots.push({wid:w.id,w:w,mag:w.mag,res:w.mag*(w.mags+(OPMAP[ld.op]&&OPMAP[ld.op].pk==='ammo'?1:0)),fireCd:0,reloadT:0,boltT:0,burst:0,item:g});});
+ [ld.g1,ld.g2].forEach(function(g){if(!g)return;var w=effW(g);P.slots.push({wid:w.id,w:w,mag:w.mag,res:w.mag*(w.mags+(OPMAP[ld.op]&&OPMAP[ld.op].pk==='ammo'?1:0)),fireCd:0,reloadT:0,boltT:0,burst:0,item:g});});
  if(!P.slots.length){var w=WMAP.g18;P.slots.push({wid:'g18',w:w,mag:w.mag,res:w.mag*w.mags,fireCd:0,reloadT:0,boltT:0,burst:0,item:makeGunItem('g18')});}
  P.height=function(){return 1.72-.62*this.crouch;};initSkill();setVM();}
 function curS(){return P.slots[P.cur];}
@@ -1718,7 +1793,7 @@ function playerUpdate(dt){var W=G.world,s=curS(),w=s.w;
  if(P.crouchOn&&P.crouch<.5)P.crouch=Math.min(1,P.crouch+dt*6);else if(P.crouchOn)P.crouch=Math.min(1,P.crouch+dt*6);else{var hy=W.ray(P.x,P.y+1.2,P.z,0,1,0,.6);if(!hy)P.crouch=Math.max(0,P.crouch-dt*6);}
  if(IN.jumpP){IN.jumpP=0;if(P.onGround){if(P.crouchOn)P.crouchOn=false;else{P.vy=5.4;P.onGround=false;}}}
  // ADS
- var adsWant=IN.aim&&s.reloadT<=0&&P.swapT<=0&&P.healT<=0;P.ads=clamp(P.ads+(adsWant?1:-1)*dt*(w.cat==='sniper'?4.2:6.5),0,1);
+ var adsWant=IN.aim&&s.reloadT<=0&&P.swapT<=0&&P.healT<=0;P.ads=clamp(P.ads+(adsWant?1:-1)*dt*(w.cat==='sniper'?4.2:6.5)*(w.adsK||1),0,1);
  if(IN.zoomP){IN.zoomP=0;if(w.zoom&&w.zoom.length>1){P.zi=(P.zi+1)%w.zoom.length;AUD.ui('tick');}}
  // move
  var mx=IN.mx,mz=IN.mz,ml=Math.hypot(mx,mz);if(ml>1){mx/=ml;mz/=ml;ml=1;}
@@ -1773,7 +1848,7 @@ function firePlayer(s){var w=s.w,W=G.world;s.mag--;P.lastShot=G.time;
   if(w.vel>0){shotRes=fireProjectile(_ro,d,w,s);}else{var res=traceShot(_ro.x,_ro.y,_ro.z,d.x,d.y,d.z,w.cat==='shotgun'?60:260,w);applyShot(res,w,_ro,d,i===0||pel<4);}}
  // recoil
  var rv=w.recoil[0]*(ads>.5?.75:1)*(P.crouch>.5?.8:1)*(OPMAP[P.op].pk==='recoil'?.8:1),rh=w.recoil[1]*(Math.random()*2-1)*(ads>.5?.8:1);P.pitch+=rv;P.yaw+=rh;P.recP+=rv;P.recY+=rh;P.kick=Math.min(1,P.kick+(w.cat==='sniper'?1:.35+w.recoil[0]*8));P.shake=Math.min(1,P.shake+w.recoil[0]*6);feelShot(w,ads);
- var vm=G.vm;vm.flash.visible=true;vm.flash.material.rotation=Math.random()*6;G.vmFlashT=.045;W.muzzleL.position.set(P.x-Math.sin(P.yaw)*.8,P.eye,P.z-Math.cos(P.yaw)*.8);var fF=FEEL[wClass(w)]||FEEL.ar;W.muzzleL.intensity=w.supp?1.5:5+fF[2]*5;W.muzzleL.distance=8+fF[2]*5;G.mlT=.05;vm.flash.visible=!w.supp;vm.flash.scale.setScalar((vm.flashS||(vm.flashS=vm.flash.scale.x))*(.7+Math.random()*.6)*(fF[2]>1.4?1.5:1));
+ var vm=G.vm;vm.flash.visible=true;vm.flash.material.rotation=Math.random()*6;G.vmFlashT=.045;W.muzzleL.position.set(P.x-Math.sin(P.yaw)*.8,P.eye,P.z-Math.cos(P.yaw)*.8);var fF=FEEL[wClass(w)]||FEEL.ar;W.muzzleL.intensity=w.supp?1.5:5+fF[2]*5;W.muzzleL.distance=8+fF[2]*5;G.mlT=.05;vm.flash.visible=!w.supp&&!w.noflash;vm.flash.scale.setScalar((vm.flashS||(vm.flashS=vm.flash.scale.x))*(.7+Math.random()*.6)*(fF[2]>1.4?1.5:1));
  if(G.gunLight){G.gunLight.intensity=w.supp?.8:2.5+fF[2]*2;}if(fF[2]>=1.1&&!w.supp)FX.muzzleSmoke&&FX.muzzleSmoke(P.x-Math.sin(P.yaw)*1.1,P.eye-.12,P.z-Math.cos(P.yaw)*1.1);
  AUD.shot(w,0,false);FX.shell(w);noise(P.x,P.z,w.supp?22:w.cat==='sniper'?120:85,w.supp?.5:1);HUD.weapon();HUD.fired();G.stats.shots++;}
 function traceShot(ox,oy,oz,dx,dy,dz,range,w){var W=G.world,wh=W.ray(ox,oy,oz,dx,dy,dz,range),maxT=wh?wh.t:range,best=null;
@@ -1784,7 +1859,7 @@ function traceShot(ox,oy,oz,dx,dy,dz,range,w){var W=G.world,wh=W.ray(ox,oy,oz,dx
  for(var j=0;j<G.enemies.length;j++){var en=G.enemies[j];if(en.dead||(best&&best.e===en))continue;var ex=en.x-ox,ey=en.y+1.3-oy,ez=en.z-oz,p2=ex*dx+ey*dy+ez*dz;if(p2<0||p2>maxT)continue;var rx=ex-dx*p2,ry=ey-dy*p2,rz=ez-dz*p2,dd=rx*rx+ry*ry+rz*rz;if(dd<9){en.supp=Math.min(2,en.supp+.35);en.alertTo(P.x,P.z,dd<2?1:.8);}}
  if(best)return {hitE:true,e:best.e,part:best.part,t:best.t,pt:best.pt};return {hitE:false,wh:wh,t:maxT};}
 function applyShot(res,w,o,d,fx,extra){var dist=res.t;
- if(res.hitE){var e=res.e,fall=w.cat==='sniper'||w.cat==='dmr'?1:1-clamp((dist-35)/180,0,.45);var dmg=w.dmg*fall*(extra&&extra.mul||1);
+ if(res.hitE){var e=res.e,fall=w.cat==='sniper'||w.cat==='dmr'?1:1-clamp((dist-35-(w.rngB||0))/180,0,.45);var dmg=w.dmg*fall*(extra&&extra.mul||1);
   if(res.part==='shield'){var sp=res.pt;FX.impact(sp.x,sp.y,sp.z,[-d.x,-d.y,-d.z],'metal',true);AUD.ric(Math.max(2,dist*.3));HUD.toast('子弹被防爆盾挡住了');if(fx)FX.tracer(_v3.set(o.x,o.y-.08,o.z).addScaledVector(d,2.5),sp,0xffe0a0);return 0;}
   var r=enemyHurt(e,dmg,res.part,{wname:w.name,dist:dist,dir:d,cat:w.cat,cls:wClass(w)});var p=res.pt,hk=HITK;
   if(hk){FX.spark(p.x,p.y,p.z,d,hk==='abreak'?16:8);if(r<0||hk==='abreak')FX.blood(p.x,p.y,p.z,d,.6);}else FX.blood(p.x,p.y,p.z,d,res.part==='head'?1.7:wClass(w)==='shotgun'?.6:1);if(fx)FX.tracer(_v3.set(o.x,o.y-.08,o.z).addScaledVector(d,2.5),p,0xffe0a0);
@@ -2075,7 +2150,7 @@ AUD.play=function(name,o){var c=this.ctx;if(!c||!this.on)return null;o=o||{};var
 AUD.listen=function(){var c=this.ctx;if(!c||!P)return;var L=c.listener,cp=Math.cos(P.pitch),fx=-Math.sin(P.yaw)*cp,fy=Math.sin(P.pitch),fz=-Math.cos(P.yaw)*cp;
  if(L.positionX){L.positionX.value=P.x;L.positionY.value=P.eye;L.positionZ.value=P.z;L.forwardX.value=fx;L.forwardY.value=fy;L.forwardZ.value=fz;L.upX.value=0;L.upY.value=1;L.upZ.value=0;}else{L.setPosition(P.x,P.eye,P.z);L.setOrientation(fx,fy,fz,0,1,0);}};
 function aDist(x,y,z){return Math.hypot(x-P.x,(y==null?P.eye:y)-P.eye,z-P.z);}
-function wClass(w){if(w.supp)return 'supp';if(w.id==='deagle')return 'magnum';if(w.id==='m82')return 'amr';if(w.cat==='ar')return (w.id==='ak47'||w.id==='scarh')?'ar762':'ar';return {pistol:'pistol',smg:'smg',lmg:'lmg',dmr:'dmr',sniper:'sniper',shotgun:'shotgun'}[w.cat]||'ar';}
+function wClass(w){if(w.supp)return 'supp';if(w.base)w={id:w.base,cat:w.cat};if(w.id==='deagle')return 'magnum';if(w.id==='m82')return 'amr';if(w.cat==='ar')return (w.id==='ak47'||w.id==='scarh')?'ar762':'ar';return {pistol:'pistol',smg:'smg',lmg:'lmg',dmr:'dmr',sniper:'sniper',shotgun:'shotgun'}[w.cat]||'ar';}
 var WLOUD={pistol:.7,magnum:.95,smg:.7,ar:.85,ar762:.92,lmg:.9,dmr:.95,sniper:1,amr:1.1,shotgun:1,supp:.55};
 AUD.shot=function(w,dist,enemy,x,z,y){if(!this.ctx||!this.on)return;var k=wClass(w),L=WLOUD[k]||.85,sl=G.kcActive?.5:1;
  if(!enemy){this.play('g_'+k,{vol:L*.95,rate:sl,rj:.03,send:.34,pri:1});
@@ -2137,7 +2212,7 @@ AUD.hurt=function(d){this.play('i_flesh',{bus:this.uiB,vol:.5+Math.min(.4,d/60),
 // ---- 10_ui.js
 // ===== UI =====
 var UI={page:'op'};
-function gunStats(w){var rng=w.cat==='sniper'?95:w.cat==='dmr'?80:w.cat==='lmg'?65:w.cat==='ar'?60:w.cat==='smg'?35:w.cat==='shotgun'?15:25;
+function gunStats(w){var rng=w.cat==='sniper'?95:w.cat==='dmr'?80:w.cat==='lmg'?65:w.cat==='ar'?60:w.cat==='smg'?35:w.cat==='shotgun'?15:25;rng=clamp(rng+(w.rngB||0)*.35,5,100);
  return [['伤害',clamp(w.dmg*(w.pellets?w.pellets*.45:1)/1.0,5,100)],['射速',clamp(w.rpm/11,5,100)],['精准',clamp(100-w.spread[1]*2500,5,100)],['稳定',clamp(100-w.recoil[0]*1500,5,100)],['机动',clamp((w.move-.8)*350,5,100)],['射程',rng]];}
 function thumbHTML(inf){return inf.img?'<img src="'+inf.img+'">':inf.icon;}
 function tileHTML(it,extra){var inf=itemInfo(it),r=RAR[inf.rar];var d=inf.gear&&inf.gear.dur?'<span class="ct" style="color:#9fd">'+Math.round(inf.dur)+'/'+inf.gear.dur+'</span>':'';
@@ -2457,6 +2532,65 @@ UI.desktop=function(){var K={};function axes(){IN.mx=(K.KeyD?1:0)-(K.KeyA?1:0);I
  addEventListener('wheel',function(e){if(G.state==='raid'&&P.ads>.5)IN.zoomP=1;});
  document.addEventListener('pointerlockchange',function(){if(!document.pointerLockElement&&G.state==='raid'&&!G.kcActive&&$('loot').classList.contains('hidden')&&!P.dead&&!G.noPause){UI.pause();}G.noPause=false;});};
 
+// ---- 10m_modui.js
+// ===== v5 改枪 UI (gunsmith) =====
+(function(){var st=document.createElement('style');st.textContent=
+ '#gsmith{position:fixed;inset:0;z-index:40;background:radial-gradient(ellipse at 35% 40%,#1c2416,#07090b 72%);display:flex;padding:calc(10px + var(--st,0px)) calc(12px + var(--sr)) 10px calc(12px + var(--sl));gap:12px;color:var(--tx)}'+
+ '#gsmith .gL{flex:1.25;display:flex;flex-direction:column;min-width:0;gap:6px}#gsmith .gR{flex:1;display:flex;flex-direction:column;min-width:0;background:rgba(10,13,17,.85);border:1px solid var(--ln2);padding:8px}'+
+ '#gsmith .ghd{display:flex;align-items:center;gap:10px}#gsmith .ghd b{font-size:16px;letter-spacing:1px}#gsmith .ghd i{font-style:normal;color:var(--ac);font-size:10px;letter-spacing:3px}'+
+ '#gsmith .gview{position:relative;flex:1;min-height:90px;display:flex;align-items:center;justify-content:center;background:repeating-linear-gradient(90deg,rgba(255,255,255,.03) 0 1px,transparent 1px 40px),repeating-linear-gradient(0deg,rgba(255,255,255,.03) 0 1px,transparent 1px 40px);border:1px solid var(--ln)}'+
+ '#gsmith .gview img{max-width:100%;max-height:100%;filter:drop-shadow(0 8px 14px rgba(0,0,0,.6))}#gsmith .gslots{display:grid;grid-template-columns:repeat(6,1fr);gap:4px}'+
+ '#gsmith .gs{background:rgba(20,26,32,.9);border:1px solid var(--ln);color:var(--tx);padding:5px 3px;font-size:10px;text-align:center;line-height:1.25;min-height:46px}#gsmith .gs.on{border-color:var(--ac);background:rgba(196,244,58,.12)}#gsmith .gs u{display:block;text-decoration:none;font-size:15px;color:var(--ac)}#gsmith .gs em{display:block;font-style:normal;color:var(--mu);font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#gsmith .gs.fill em{color:#e8f0d8}'+
+ '#gsmith .gst{display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;font-size:10px}#gsmith .gst div{display:flex;align-items:center;gap:6px}#gsmith .gst span{width:30px;color:var(--mu)}#gsmith .gst i{flex:1;height:5px;background:rgba(255,255,255,.08);position:relative}#gsmith .gst i u{position:absolute;left:0;top:0;bottom:0;background:#c9d0c0}#gsmith .gst i s{position:absolute;top:0;bottom:0}#gsmith .gst em{width:44px;text-align:right;font-style:normal}'+
+ '#gsmith .gopts{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:5px;margin:6px 0}#gsmith .go{text-align:left;background:rgba(22,28,34,.92);border:1px solid var(--ln);color:var(--tx);padding:7px 8px;font-size:11px}#gsmith .go.on{border-color:var(--ac)}#gsmith .go b{font-size:12px}#gsmith .go .pr{float:right;color:var(--ac2);font-weight:900}#gsmith .go .ef{display:block;margin-top:3px;font-size:10px}#gsmith .go .ef i{font-style:normal;margin-right:7px}#gsmith .up{color:#8fe04a}#gsmith .dn{color:#ff6a5a}#gsmith .go small{color:var(--mu);display:block;font-size:9.5px}'+
+ '.modBtn{position:absolute;right:6px;bottom:6px;background:rgba(196,244,58,.16);border:1px solid var(--ac);color:var(--ac);font-size:10px;padding:3px 8px;letter-spacing:1px}.slot{position:relative}'+
+ 'html.cmp #gsmith .gs{min-height:38px;padding:3px 2px}html.cmp #gsmith .gs u{font-size:12px}';
+ document.head.appendChild(st);})();
+var MODTHUMB={};
+function modThumb(w){if(MODTHUMB[w.id])return MODTHUMB[w.id];var r=G.renderer;if(!r)return GUNTHUMB[w.base||w.id]||'';var W=480,H=180;
+ try{var rt=new THREE.WebGLRenderTarget(W,H);rt.texture.colorSpace=THREE.SRGBColorSpace;var sc=new THREE.Scene();sc.add(new THREE.HemisphereLight(0xffffff,0x707070,3.2));var dl=new THREE.DirectionalLight(0xffffff,3.5);dl.position.set(3,4,2);sc.add(dl);var dl2=new THREE.DirectionalLight(0xc8dcff,1.6);dl2.position.set(2,-1,-3);sc.add(dl2);
+ var cam=new THREE.PerspectiveCamera(18,W/H,.1,50),buf=new Uint8Array(W*H*4),cv=mkCanvas(W,H),g=cv.getContext('2d'),img=g.createImageData(W,H),box=new THREE.Box3(),c=new THREE.Vector3(),sz=new THREE.Vector3();
+ var gp=buildGunTP(w.id),gr=gp.group;sc.add(gr);box.setFromObject(gr);box.getCenter(c);box.getSize(sz);var hf=Math.atan(Math.tan(18*PI/360)*W/H);var L=Math.max(sz.z,sz.y*W/H)*1.05;var d=L/2/Math.tan(hf);cam.position.set(c.x+d,c.y+d*.12,c.z+d*.05);cam.lookAt(c);
+ var oc=new THREE.Color();r.getClearColor(oc);var oa=r.getClearAlpha();r.setClearColor(0x000000,0);r.setRenderTarget(rt);r.clear();r.render(sc,cam);r.readRenderTargetPixels(rt,0,0,W,H,buf);r.setRenderTarget(null);r.setClearColor(oc,oa);
+ for(var y=0;y<H;y++)img.data.set(buf.subarray((H-1-y)*W*4,(H-y)*W*4),y*W*4);g.putImageData(img,0,0);MODTHUMB[w.id]=cv.toDataURL();gp.mesh.geometry.dispose();rt.dispose();}catch(e){return GUNTHUMB[w.base||w.id]||'';}
+ return MODTHUMB[w.id];}
+function modStats(w){var g=gunStats(w),ads=clamp(((w.cat==='sniper'?4.2:6.5)*(w.adsK||1)-3)*22,5,100);return [['伤害',g[0][1]],['射速',g[1][1]],['精准',clamp(100-w.spread[1]*2500,5,100)],['腰射',clamp(100-w.spread[0]*900,5,100)],['稳定',g[3][1]],['机动',g[4][1]],['射程',g[5][1]],['开镜',ads],['弹匣',null,w.mag],['换弹',null,w.reload+'s']];}
+UI.gsmith=function(k,slot){SAVE.att=SAVE.att||{};var it=SAVE.ld[k];if(!it||it.t!=='gun')return;it.att=it.att||{};var b=WMAP[it.gid],slots=slotsFor(b);if(!slots.length){tip('该武器暂无可用配件');return;}
+ slot=slot&&slots.indexOf(slot)>=0?slot:(UI.gsSlot&&slots.indexOf(UI.gsSlot)>=0?UI.gsSlot:slots[0]);UI.gsSlot=slot;
+ var w=effW(it),el=$('gsmith');if(!el){el=document.createElement('div');el.id='gsmith';document.body.appendChild(el);}
+ var cur=it.att[slot],h='<div class="gL"><div class="ghd"><button class="btnG" id="gsBack">← 返回</button><div><i>GUNSMITH · 改枪</i><br><b>'+esc(b.name)+'</b></div><div style="flex:1"></div><span style="color:var(--ac2);font-weight:900">'+coin(SAVE.coins)+'</span></div>';
+ h+='<div class="gview"><img src="'+modThumb(w)+'"></div><div class="gslots">';
+ slots.forEach(function(s){var a=ATTMAP[it.att[s]];h+='<button class="gs'+(s===slot?' on':'')+(a?' fill':'')+'" data-s="'+s+'"><u>'+ATT_ICON[s]+'</u>'+ATT_SLOTN[s][0]+'<em>'+(a?esc(a.name):'— 空 —')+'</em></button>';});
+ h+='</div><div class="gst">';var ms=modStats(w),bs=modStats(b);
+ ms.forEach(function(s,i){if(s[1]==null){h+='<div><span>'+s[0]+'</span><b style="flex:1">'+s[2]+(String(s[2])!==String(bs[i][2])?' <small class="'+((s[0]==='弹匣'?s[2]>bs[i][2]:parseFloat(s[2])<parseFloat(bs[i][2]))?'up':'dn')+'">(原 '+bs[i][2]+')</small>':'')+'</b></div>';return;}
+  var v=Math.round(s[1]),o=Math.round(bs[i][1]),dlt=v-o;h+='<div><span>'+s[0]+'</span><i><u style="width:'+Math.min(v,o)+'%"></u>'+(dlt?'<s style="left:'+Math.min(v,o)+'%;width:'+Math.abs(dlt)+'%;background:'+(dlt>0?'#8fe04a':'#ff5a4a')+'"></s>':'')+'</i><em class="'+(dlt>0?'up':dlt<0?'dn':'')+'">'+v+(dlt?(dlt>0?' +':' ')+dlt:'')+'</em></div>';});
+ h+='</div></div><div class="gR"><div class="lbl">'+ATT_SLOTN[slot][0]+' · '+ATT_SLOTN[slot][1]+'</div><div class="gopts">';
+ h+='<button class="go'+(!cur?' on':'')+'" data-a=""><b>不安装</b><small>保持原厂配置</small></button>';
+ attsFor(b,slot).forEach(function(a){var own=SAVE.att[a.id]||0,on=cur===a.id;var t={};t.att=JSON.parse(JSON.stringify(it.att));t.att[slot]=a.id;t.gid=it.gid;var w2=effW(t),m2=modStats(w2),m1=modStats(w),ef='';
+  m2.forEach(function(s,i){if(s[1]==null){if(String(s[2])!==String(m1[i][2]))ef+='<i class="'+((s[0]==='弹匣'?s[2]>m1[i][2]:parseFloat(s[2])<parseFloat(m1[i][2]))?'up':'dn')+'">'+s[0]+' '+s[2]+'</i>';return;}var dl=Math.round(s[1])-Math.round(m1[i][1]);if(dl)ef+='<i class="'+(dl>0?'up':'dn')+'">'+s[0]+(dl>0?'+':'')+dl+'</i>';});
+  if(a.s.supp)ef+='<i class="up">消音</i>';if(a.s.noflash)ef+='<i class="up">无火光</i>';if(a.s.zoom)ef+='<i class="up">'+a.s.zoom.join('/')+'倍</i>';
+  h+='<button class="go'+(on?' on':'')+'" data-a="'+a.id+'"><span class="pr">'+(on?'已安装':own?'库存 '+own:coin(a.price))+'</span><b>'+a.name+'</b><small>'+a.d+'</small><span class="ef">'+(ef||'<i style="color:var(--mu)">无变化</i>')+'</span></button>';});
+ h+='</div><div style="font-size:9.5px;color:var(--mu);line-height:1.4">配件随枪携带：撤离成功保留，阵亡随枪丢失。卸下的配件回到配件库存。</div></div>';
+ el.innerHTML=h;show(el,true);
+ $('gsBack').onclick=function(){el.remove();AUD.ui('tick');UI.r_load();LOBBY.refresh();};
+ el.querySelectorAll('.gs').forEach(function(x){x.onclick=function(){AUD.ui('tick');UI.gsmith(k,x.dataset.s);};});
+ el.querySelectorAll('.go').forEach(function(x){x.onclick=function(){var id=x.dataset.a,old=it.att[slot];if(id===(old||''))return;
+  if(id){var a=ATTMAP[id];if((SAVE.att[id]||0)>0)SAVE.att[id]--;else{if(SAVE.coins<a.price){tip('哈夫币不足');AUD.ui('click');return;}SAVE.coins-=a.price;AUD.ui('buy');}}
+  if(old)SAVE.att[old]=(SAVE.att[old]||0)+1;if(id)it.att[slot]=id;else delete it.att[slot];saveGame();UI.coins();AUD.ui('tick');tip(id?'已安装：'+ATTMAP[id].name:'已卸下');UI.gsmith(k,slot);};});};
+// 配装页：在枪械槽位上加“改枪”按钮
+(function(){var base=UI.r_load;UI.r_load=function(){base();var pg=$('pg-load');['g1','g2'].forEach(function(k){var it=SAVE.ld[k],sl=pg.querySelector('.slot[data-k="'+k+'"]');if(!it||!sl||!slotsFor(WMAP[it.gid]).length)return;var bt=document.createElement('span');bt.className='modBtn';bt.textContent='🔧 改枪';bt.onclick=function(e){e.stopPropagation();AUD.ui('tick');UI.gsmith(k);};sl.appendChild(bt);});};})();
+// 军械库：配件分类
+SHOPCATS.push(['att','配件']);
+(function(){var base=UI.r_shop;UI.r_shop=function(){if(UI.shopCat!=='att'){base();return;}SAVE.att=SAVE.att||{};var h='<div id="cats" class="scroll">';SHOPCATS.forEach(function(c){h+='<button data-c="'+c[0]+'" class="'+(UI.shopCat===c[0]?'on':'')+'">'+c[1]+'</button>';});h+='</div><div id="shopGrid" class="scroll">';
+ if(!UI.attSel||!ATTMAP[UI.attSel])UI.attSel=ATTS[0].id;
+ ATTS.forEach(function(a){var own=SAVE.att[a.id]||0;h+='<button class="card cut'+(UI.attSel===a.id?' on':'')+'" data-i="'+a.id+'">'+(own?'<span class="own">库存 '+own+'</span>':'')+'<div class="th" style="font-size:26px;color:var(--ac)">'+ATT_ICON[a.slot]+'</div><b>'+a.name+'</b><span class="pr">'+coin(a.price)+'</span></button>';});
+ h+='</div><div id="shopDet" class="pn scroll"></div>';var pg=$('pg-shop');pg.innerHTML=h;
+ pg.querySelectorAll('#cats button').forEach(function(b){b.onclick=function(){UI.shopCat=b.dataset.c;UI.shopSel=null;AUD.ui('tick');UI.r_shop();};});
+ pg.querySelectorAll('.card').forEach(function(b){b.onclick=function(){UI.attSel=b.dataset.i;AUD.ui('tick');UI.r_shop();};});
+ var a=ATTMAP[UI.attSel],CN={pistol:'手枪',smg:'冲锋枪',ar:'步枪',shotgun:'霰弹枪',lmg:'机枪',dmr:'射手步枪',sniper:'狙击步枪'};
+ var d='<div class="bigth" style="font-size:54px;color:var(--ac)">'+ATT_ICON[a.slot]+'</div><b style="font-size:15px">'+a.name+'</b><div style="font-size:10px;color:var(--mu)">'+ATT_SLOTN[a.slot][0]+'配件 · 适用：'+a.cats.map(function(c){return CN[c];}).join('、')+'</div><div class="stat" style="margin-top:6px">'+a.d+'</div><div class="stat">库存 '+(SAVE.att[a.id]||0)+' 个</div>';
+ d+='<div style="flex:1"></div><div style="font-size:18px;font-weight:900;color:var(--ac2)">'+coin(a.price)+'</div><button class="btnA cut" id="buyBtn">购买</button><button class="btnG cut" id="toLoad">去配装页改枪</button>';
+ $('shopDet').innerHTML=d;$('buyBtn').onclick=function(){if(SAVE.coins<a.price){tip('哈夫币不足');return;}SAVE.coins-=a.price;SAVE.att[a.id]=(SAVE.att[a.id]||0)+1;saveGame();AUD.ui('buy');UI.coins();tip('已购买：'+a.name);UI.r_shop();};$('toLoad').onclick=function(){UI.go('load');};};})();
 // ---- 11_main.js
 // ===== MAIN =====
 var SAVE_KEY='delta_raid_v2';
@@ -2502,7 +2636,7 @@ LOBBY.init=function(){var sc=this.scene=new THREE.Scene();sc.background=new THRE
  this.cone=new THREE.Mesh(new THREE.CylinderGeometry(.15,1.7,5.5,32,1,true),new THREE.MeshBasicMaterial({color:0xfff2d8,transparent:true,opacity:.07,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide}));this.cone.position.set(0,2.75,.2);sc.add(this.cone);
  var N=160,pa=new Float32Array(N*3);for(var i2=0;i2<N;i2++){pa[i2*3]=(Math.random()-.5)*5;pa[i2*3+1]=Math.random()*3.2;pa[i2*3+2]=(Math.random()-.5)*3;}var dg=new THREE.BufferGeometry();dg.setAttribute('position',new THREE.BufferAttribute(pa,3));this.dust=new THREE.Points(dg,new THREE.PointsMaterial({color:0xfff0d0,size:.018,transparent:true,opacity:.55,depthWrite:false}));sc.add(this.dust);
  this.t=0;this.refresh();};
-LOBBY.refresh=function(opId){if(!this.scene)return;var L=SAVE.ld,gid=L.g1?L.g1.gid:L.g2?L.g2.gid:null;var o=OPMAP[opId||(UI.page==='ops'&&UI.opSel)||L.op];this.showLook(o.look,gid,o.id);};
+LOBBY.refresh=function(opId){if(!this.scene)return;var L=SAVE.ld,gid=L.g1?effW(L.g1).id:L.g2?effW(L.g2).id:null;var o=OPMAP[opId||(UI.page==='ops'&&UI.opSel)||L.op];this.showLook(o.look,gid,o.id);};
 LOBBY.showLook=function(look,gid,key){if(this.key===key+'|'+gid&&this.op)return;this.key=key+'|'+gid;if(this.op){this.scene.remove(this.op.root);this.op.meshes.forEach(function(m){m.geometry.dispose();});}this.op=buildHumanoid(look,gid,{pose:'low'});this.scene.add(this.op.root);this.op.root.rotation.y=PI+.3;this.op.root.position.x=this.tx||0;this.op.root.position.y=-.25;this.pop=0;};
 LOBBY.pose=function(p){this.tx=0;this.cz=p==='op'||p==='ops'||p==='intel'?3.9:5.2;
  if(p==='intel'){var s=UI.intelSel,b=BOSSES[s];if(b)this.showLook(b.look,b.gun,'boss'+s);else{var e=ETYPES[s];this.showLook(e.look,e.guns[0],'en'+s);}}else this.refresh();
