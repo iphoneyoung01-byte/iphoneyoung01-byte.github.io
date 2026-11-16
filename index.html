@@ -1223,6 +1223,35 @@ WP.lootBox=function(k,x,y,z,ry){var self=this,ty=y||0;function B(w,h,d,px,py,pz,
  var D=dims;var rot=ry&&Math.abs(Math.abs(ry)-PI/2)<.01;var sw=rot?D[2]:D[0],sd=rot?D[0]:D[2];if(D[1]>.3||!y)this.solid(x-sw/2,x+sw/2,ty,ty+D[1],z-sd/2,z+sd/2,{surf:k==='crate'||k==='weapon'||k==='drawer'?'wood':'metal'});
  this.lootSpots.push({k:k,x:x,y:ty+(this.cy||0),z:z,h:D[1]});};
 
+// ---- 05a_raygrid.js
+// ===== v5: uniform-grid DDA ray cast over solids (replaces linear scan; big maps) =====
+WP.buildRG=function(){var C=6,S=this.S+12,N=Math.ceil(2*S/C),cells=new Array(N*N),big=[],sol=this.solids;
+ for(var i=0;i<sol.length;i++){var s=sol[i];if(!s.ray)continue;var x0=Math.max(0,Math.floor((s.minX+S)/C)),x1=Math.min(N-1,Math.floor((s.maxX+S)/C)),z0=Math.max(0,Math.floor((s.minZ+S)/C)),z1=Math.min(N-1,Math.floor((s.maxZ+S)/C));
+  if(x1<x0||z1<z0||(x1-x0+1)*(z1-z0+1)>300){big.push(i);continue;}for(var a=x0;a<=x1;a++)for(var b=z0;b<=z1;b++){var k=a+b*N;(cells[k]||(cells[k]=[])).push(i);}}
+ this.rg={C:C,S:S,N:N,cells:cells,big:big,n:sol.length,stamp:new Uint32Array(sol.length+1),st:0};};
+WP.ray=function(ox,oy,oz,dx,dy,dz,maxT){var R=this.rg;if(!R||R.n!==this.solids.length){this.buildRG();R=this.rg;}
+ var best=maxT,bs=null,sol=this.solids,stamp=R.stamp,st=++R.st;if(st>4e9){stamp.fill(0);R.st=st=1;}var ix=1/dx,iy=1/dy,iz=1/dz;
+ function test(i){if(stamp[i]===st)return;stamp[i]=st;var s=sol[i];
+  var t1=(s.minX-ox)*ix,t2=(s.maxX-ox)*ix,tmin=t1<t2?t1:t2,tmax=t1<t2?t2:t1;
+  t1=(s.y0-oy)*iy;t2=(s.top-oy)*iy;var a=t1<t2?t1:t2,b=t1<t2?t2:t1;if(a>tmin)tmin=a;if(b<tmax)tmax=b;if(tmax<tmin)return;
+  t1=(s.minZ-oz)*iz;t2=(s.maxZ-oz)*iz;a=t1<t2?t1:t2;b=t1<t2?t2:t1;if(a>tmin)tmin=a;if(b<tmax)tmax=b;
+  if(tmax>=tmin&&tmin>0&&tmin<best){best=tmin;bs=s;}}
+ var big=R.big;for(var q=0;q<big.length;q++)test(big[q]);
+ var C=R.C,S=R.S,N=R.N,cells=R.cells;
+ // clip ray to grid square in xz
+ var tE=0,tX=best,t1,t2;
+ if(dx!==0){t1=(-S-ox)*ix;t2=(S-ox)*ix;tE=Math.max(tE,Math.min(t1,t2));tX=Math.min(tX,Math.max(t1,t2));}else if(ox<-S||ox>S)tX=-1;
+ if(dz!==0){t1=(-S-oz)*iz;t2=(S-oz)*iz;tE=Math.max(tE,Math.min(t1,t2));tX=Math.min(tX,Math.max(t1,t2));}else if(oz<-S||oz>S)tX=-1;
+ if(tX>=tE){var px=ox+dx*tE,pz=oz+dz*tE,cx=Math.min(N-1,Math.max(0,Math.floor((px+S)/C))),cz=Math.min(N-1,Math.max(0,Math.floor((pz+S)/C)));
+  var sx=dx>0?1:-1,sz=dz>0?1:-1,tmx=dx!==0?((cx+(dx>0?1:0))*C-S-ox)*ix:Infinity,tmz=dz!==0?((cz+(dz>0?1:0))*C-S-oz)*iz:Infinity,ddx=dx!==0?Math.abs(C*ix):Infinity,ddz=dz!==0?Math.abs(C*iz):Infinity,tc=tE,guard=0;
+  while(cx>=0&&cz>=0&&cx<N&&cz<N&&tc<=best&&guard++<4*N){var l=cells[cx+cz*N];if(l)for(var j=0;j<l.length;j++)test(l[j]);
+   if(tmx<tmz){tc=tmx;tmx+=ddx;cx+=sx;}else{tc=tmz;tmz+=ddz;cz+=sz;}}}
+ if(dy<0){var tg=-oy/dy;if(tg>0&&tg<best){best=tg;bs='ground';}}
+ if(!bs)return null;var hx=ox+dx*best,hy=oy+dy*best,hz=oz+dz*best,n=[0,1,0];
+ if(bs!=='ground'){var e=.002;if(Math.abs(hx-bs.minX)<e)n=[-1,0,0];else if(Math.abs(hx-bs.maxX)<e)n=[1,0,0];else if(Math.abs(hz-bs.minZ)<e)n=[0,0,-1];else if(Math.abs(hz-bs.maxZ)<e)n=[0,0,1];else if(Math.abs(hy-bs.y0)<e)n=[0,-1,0];}
+ return {t:best,s:bs,x:hx,y:hy,z:hz,n:n,surf:bs==='ground'?(this.theme.ground==='snow'?'snow':this.theme.ground==='sand'?'sand':'dirt'):bs.surf};};
+WP.rayLinear=function(ox,oy,oz,dx,dy,dz,maxT){var best=maxT,bs=null;var ix=1/dx,iy=1/dy,iz=1/dz;for(var i=0;i<this.solids.length;i++){var s=this.solids[i];if(!s.ray)continue;var t1=(s.minX-ox)*ix,t2=(s.maxX-ox)*ix,tmin=Math.min(t1,t2),tmax=Math.max(t1,t2);t1=(s.y0-oy)*iy;t2=(s.top-oy)*iy;tmin=Math.max(tmin,Math.min(t1,t2));tmax=Math.min(tmax,Math.max(t1,t2));if(tmax<tmin)continue;t1=(s.minZ-oz)*iz;t2=(s.maxZ-oz)*iz;var a=Math.min(t1,t2),b=Math.max(t1,t2);if(a>tmin){tmin=a;}tmax=Math.min(tmax,b);if(tmax>=tmin&&tmin>0&&tmin<best){best=tmin;bs=s;}}return bs?{t:best,s:bs}:null;};
+WP.rayGrid=WP.ray;
 // ---- 05b_terrain.js
 // ===== TERRAIN (heightfield) + auto-Y placement =====
 function sstep(a,b,x){var t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);}
@@ -1501,6 +1530,112 @@ var MAPS=[
   W.bossSpot=[0,-30];}}
 ];
 
+// ---- 06x_expand.js
+// ===== v5 MAP EXPANSION: 180m -> 260m playable, new regions / landmarks per map =====
+var MAP_S=130;
+function expandMap(id,featsFn,buildFn){var m=MAPS.filter(function(x){return x.id===id;})[0];if(!m)return;m.theme.S=MAP_S;m.theme.fogF=Math.round(m.theme.fogF*1.18);
+ var of=m.terrain.feats,base=m.terrain.base;m.terrain.feats=function(){return of.call(this).concat(featsFn(base));};
+ var ob=m.build;m.build=function(W){ob.call(this,W);buildFn.call(this,W);};}
+// shared props
+WP.pylon=function(x,z,h){h=h||18;var c=0x6a6e72;for(var i=0;i<4;i++){var sx=i&1?1:-1,sz=i&2?1:-1;this.box(x+sx*1.1,0,z+sz*1.1,.18,h*.55,.18,'metal',{c:c,solid:i===0});}this.box(x,h*.5,z,1.6,h*.5,1.6,'metal',{c:c,solid:false});this.box(x,h*.92,z,7,.3,.3,'metal',{c:c,solid:false});this.box(x,h*.78,z,5.2,.3,.3,'metal',{c:c,solid:false});this.solid(x-1.3,x+1.3,this.H(x,z),this.H(x,z)+h,z-1.3,z+1.3,{surf:'metal'});};
+WP.flare=function(x,z,h){this.cyl(x,0,z,.5,h,'metal',{c:0x8a8a84,seg:10});this.cyl(x,h,z,.7,.8,'metal',{c:0x3a3a36,solid:false,seg:10});var y=this.H(x,z)+h+1.6;var m=new THREE.Mesh(new THREE.ConeGeometry(.9,3.2,8),new THREE.MeshBasicMaterial({color:0xffa030,transparent:true,opacity:.85,fog:false}));m.position.set(x,y,z);this.scene.add(m);var l=new THREE.PointLight(0xff9a40,2.2,26,1.6);l.position.set(x,y,z);this.scene.add(l);var ph=Math.random()*9;this.dyn.push(function(t){t+=ph;var k=1+.18*Math.sin(t*13)+.1*Math.sin(t*31);m.scale.set(k,k*(1+.2*Math.sin(t*7)),k);l.intensity=2+.5*Math.sin(t*17);});};
+WP.railTrack=function(x0,z0,x1,z1){var dx=x1-x0,dz=z1-z0,L=Math.hypot(dx,dz),ux=dx/L,uz=dz/L,ry=Math.atan2(dx,dz);for(var t=0;t<L;t+=1.4){var x=x0+ux*t,z=z0+uz*t;this.box(x,0,z,Math.abs(uz)>.5?2.6:.25,.12,Math.abs(uz)>.5?.25:2.6,'wood',{c:0x4a3a2a,solid:false});}
+ for(var s=-1;s<=1;s+=2){var ox=-uz*.72*s,oz=ux*.72*s;for(var t2=0;t2<L;t2+=8){var a=t2,b=Math.min(L,t2+8),xa=x0+ux*a+ox,za=z0+uz*a+oz,xb=x0+ux*b+ox,zb=z0+uz*b+oz;this.box((xa+xb)/2,.12,(za+zb)/2,Math.abs(uz)>.5?.08:b-a,.12,Math.abs(uz)>.5?b-a:.08,'metal',{c:0x5a5550,solid:false,surf:'metal'});}}};
+WP.tankCar=function(x,z,alongZ,c){var y=.95;this.box(x,.3,z,alongZ?2.4:11,.7,alongZ?11:2.4,'metal',{c:0x2a2a28});this.cyl(x,y+.25,z,1.35,10.4,'metal',{c:c||0x2a2c30,axis:alongZ?'z':'x',seg:14});};
+WP.planeWreck=function(x,z,ry){var c=0x8a9086,s=Math.sin(ry),co=Math.cos(ry);var self=this;function P(dx,dz){return [x+dx*co+dz*s,z-dx*s+dz*co];}
+ var a=P(0,0);this.cyl(a[0],.4,a[1],2.1,16,'metal',{c:c,axis:Math.abs(s)>.7?'x':'z',seg:14});var b=P(0,11);this.cyl(b[0],.2,b[1],1.6,5,'metal',{c:0x6a7066,axis:Math.abs(s)>.7?'x':'z',seg:12});
+ var w1=P(-8,1),w2=P(9.5,-1);this.box(w1[0],.3,w1[1],Math.abs(s)>.7?4:10,.35,Math.abs(s)>.7?10:4,'metal',{c:c});this.box(w2[0],-.2,w2[1],Math.abs(s)>.7?3.6:8,.35,Math.abs(s)>.7?8:3.6,'metal',{c:0x5a6058});
+ var t=P(0,-9.5);this.box(t[0],1.2,t[1],.4,4.5,3,'metal',{c:c,solid:true});var e=P(-5.5,2);this.cyl(e[0],-.3,e[1],.8,2.6,'metal',{c:0x3a3c3a,axis:Math.abs(s)>.7?'x':'z'});
+ for(var i=0;i<8;i++){var p=P((Math.random()-.5)*26,(Math.random()-.5)*26);this.box(p[0],0,p[1],.6+Math.random()*1.4,.15+Math.random()*.4,.5+Math.random()*1.2,'metal',{c:0x4a4e4a,solid:false});}};
+WP.iceHut=function(x,z,c){this.building(x,z,3.2,2.6,2.4,{mat:'wood',c:c||0x9a3e2c,doors:{s:[0]},roofC:0xe8ecf0,preset:'house'});};
+WP.pillbox=function(x,z,ry){this.building(x,z,6,5,2.6,{mat:'concrete',c:0x9aa0a4,doors:{s:[0]},win:true,preset:'barracks',roofC:0xdfe4e8});this.sandbags(x,z-3.6,0,3);};
+WP.billboard=function(x,z,c){this.box(x-2.2,0,z,.25,5,.25,'metal',{c:0x5a5a58});this.box(x+2.2,0,z,.25,5,.25,'metal',{c:0x5a5a58});this.box(x,5,z,6,3,.2,'plain',{c:c||0xc8402a,solid:false});};
+
+// ---------------- DAM: south river village, east highland powerline & lodge, west quarry ----------------
+expandMap('dam',function(base){var riv=[];for(var z=94;z<=140;z+=8)riv.push([meander(z),z,-2-(z+38)*.003]);
+ return [{t:'path',pts:riv,w:8,fall:4},
+  {t:'pad',x:-30,z:108,w:30,d:24,h:1.4,fall:8},{t:'pad',x:38,z:112,w:30,d:22,h:1.2,fall:8},
+  {t:'pad',x:110,z:-30,w:28,d:46,h:base(110,-30)+.5,fall:8},{t:'pad',x:106,z:60,w:26,d:22,h:base(106,60),fall:8},
+  {t:'pad',x:-110,z:30,w:30,d:34,h:base(-110,30)-7,fall:5},{t:'pad',x:-108,z:-30,w:20,d:16,h:base(-108,-30),fall:6},
+  {t:'path',pts:[[meander(100)+15,100,null],[60,104,null],[90,86,null],[106,62,base(106,60)]],w:5,fall:4,road:true},
+  {t:'path',pts:[[-38,40,null],[-80,52,null],[-100,36,base(-110,30)-7]],w:5,fall:4,road:true},
+  {t:'path',pts:[[76,-24,null],[96,-30,base(110,-30)+.5]],w:5,fall:4,road:true}];},
+ function(W){W.water(meander(116),116,44,52,-.95,0x3a6a72,.85);
+  // stone arch bridge
+  var bz=112,bx=meander(bz);W.atY(0,function(){W.box(bx,1,bz,24,.5,4.4,'concrete',{c:0x9a8e7a,us:3,walk:1});W.box(bx,1.5,bz-2.1,24,.8,.3,'concrete',{c:0x8a7e6a});W.box(bx,1.5,bz+2.1,24,.8,.3,'concrete',{c:0x8a7e6a});for(var k=-1;k<=1;k+=2)W.box(bx+k*5,-3,bz,1.4,4,4,'concrete',{c:0x7a6e5e,solid:false});});
+  // river village 河湾村
+  [[-38,102,{e:[0]},0xd8c0a0],[-24,100,{s:[0]},0xc8a882],[-36,116,{e:[0]},0xb89070],[-22,116,{n:[0]},0xe0caa8]].forEach(function(h,i){W.building(h[0],h[1],7,6,3.2,{mat:i%2?'wood':'brick',c:h[3],doors:h[2],win:true,preset:'house',stairs:i===2?'e':null,roofC:[0x7a3e30,0x4a5a6a][i%2]});});
+  W.building2(36,108,12,9,3.3,2,{mat:'brick',c:0xc89a72,doors:{s:[0],w:[0]},win:true,presets:['office','house'],stairs:'e',safe:true});
+  W.building(46,118,8,6,3.2,{mat:'wood',c:0x8a6a4a,doors:{w:[0]},win:true,preset:'house',roofC:0x5a3a2a});W.building(28,120,6,5,3,{mat:'brick',c:0xb08068,doors:{n:[0]},preset:'storage'});
+  W.tent(-14,108,0,0x5a6a3a);W.crateStack(-30,108,2);W.barrels(32,102,3);W.vehicle(20,104,.3,'truck',0x6a5a40);W.vehicle(-44,110,PI/2,'jeep',0x4a5a4a);
+  for(var i=0;i<5;i++)W.box(-50+i*7,0,124,6,1,.3,'wood',{c:0x6a5038});W.lamp(-28,108);W.lamp(40,112);W.sandbags(bx+13,bz-3,0,3);
+  // east highland powerline + hunting lodge
+  for(var pz=-120;pz<=120;pz+=40)W.pylon(118,pz,20);
+  W.building2(108,-34,14,10,3.4,2,{mat:'wood',c:0x7a5a3e,doors:{w:[0],s:[0]},win:true,presets:['house','office'],stairs:'n',roofC:0x3a4a3a});
+  W.building(112,-14,8,6,3.2,{mat:'wood',c:0x6a4a32,doors:{w:[0]},preset:'storage',roofC:0x3a4a3a});W.tower(100,-50,6,true);W.vehicle(100,-22,0,'jeep',0x4a4a3a);W.lootBox('weapon',110,0,-40,0);W.lootBox('crate',114,0,-12,0);
+  // transformer yard on east plateau
+  for(var t=0;t<3;t++){W.box(100+t*6,0,58,3,3,2.4,'metal',{c:0x7a8088,surf:'metal'});}W.fenceSeg(96,52,116,52);W.fenceSeg(96,52,96,66);W.fenceSeg(116,52,116,66);W.building(110,66,6,5,3,{mat:'concrete',c:0xa8a49a,doors:{w:[0]},preset:'lab'});W.lootBox('toolbox',104,0,62,0);
+  // west quarry (sunken pit) + ruins
+  var qy=W.H(-110,30);
+  [[-118,22],[-102,40],[-114,44]].forEach(function(p,i){W.rock(p[0],p[1],2.4+i*.6,0x9a9282);});
+  W.box(-104,0,24,3,4,3,'metal',{c:0xc9a12c});W.box(-99,3.5,24,9,.6,1,'metal',{c:0x7a6a4a,solid:false});W.vehicle(-112,32,.8,'truck',0xc9a12c);W.vehicle(-100,30,2.2,'apc',0xb08a2a);
+  W.building(-118,36,8,6,3.4,{mat:'metal',c:0x8c9298,doors:{e:[0]},preset:'garage',roofMat:'metal',roofC:0x6a7078});W.crateStack(-106,40,3);W.barrels(-116,26,4);W.lootBox('crate',-110,0,36,0);W.lootBox('medbox',-104,0,30,0);
+  W.building(-108,-30,9,7,3,{mat:'brick',c:0x9a8a78,doors:{e:[0],s:[0]},win:true,preset:'house',roofC:0x5a4a3a});W.sandbags(-100,-26,PI/2,3);W.lootBox('bag',-110,0,-32,0);
+  trees(W,110,['pine','broad','pine'],function(x,z){return Math.max(Math.abs(x),Math.abs(z))>88;});rocks(W,20,0x8a8478);
+  W.extract('河湾村渡口',-6,126);W.extract('东岭电塔',118,-80,'rand');
+  W.espots.push(['rifle',-30,108,8],['rifle',36,110,8],['rusher',-24,118,10],['rifle',108,-34,8],['heavy',110,-20,6],['rifle',106,60,8],['rusher',-108,32,10],['rifle',-112,40,8],['rifle',-108,-30,6],['medic',30,114,6]);
+  W.spawns.push({x:100,z:110},{x:-100,z:100});}
+);
+// ---------------- OIL: east flare field, south gas station/motel, north railway, west mesa ruins ----------------
+expandMap('oil',function(base){return [{t:'pad',x:108,z:-20,w:34,d:60,h:base(108,-20),fall:8},{t:'pad',x:10,z:112,w:44,d:26,h:base(10,112),fall:8},
+  {t:'pad',x:0,z:-110,w:240,d:10,h:3,fall:10},{t:'pad',x:-30,z:-100,w:20,d:12,h:3,fall:6},{t:'pad',x:-108,z:-40,w:30,d:30,h:17,fall:4},
+  {t:'path',pts:[[6,96,null],[8,128,null]],w:7,fall:4,road:true},{t:'path',pts:[[52,-58,4],[90,-40,null],[104,-30,null]],w:6,fall:4,road:true},
+  {t:'path',pts:[[-30,-100,3],[-40,-70,null],[-34,-62,null]],w:6,fall:4,road:true}];},
+ function(W){
+  // flare field
+  W.flare(116,-44,16);W.flare(120,8,12);W.pumpjack(100,-60,.4);W.pumpjack(104,24,1);W.pumpjack(118,40,2.1);W.pumpjack(96,-4,0);
+  [[104,-30],[114,-28]].forEach(function(p){W.tank(p[0],p[1],3.4,7,0xd8d0c0);});
+  W.pipe(90,-36,124,-36,1.2,.35,0x8a5a3a);W.pipe(108,-36,108,30,1.2,.3,0xa8a090);
+  W.building(102,-10,10,8,3.4,{mat:'metal',c:0xa89a80,doors:{w:[0],s:[0]},win:true,preset:'control',roofMat:'metal',roofC:0x8a8478});W.container(118,-14,1,0xc27a2a);W.container(118,-4,1,0x2d5f8f);W.tower(96,-50,7,true);
+  W.lootBox('weapon',104,0,-14,0);W.lootBox('crate',112,0,-24,0);W.lootBox('toolbox',100,0,20,0);
+  // south roadside: gas station + motel
+  W.building(-4,108,12,8,3.6,{mat:'concrete',c:0xe0d0b0,doors:{e:[0],n:[0]},win:true,preset:'storage',roofC:0xc83a2a});
+  var gy=W.H(14,108);W.box(14,4,108,12,.4,8,'metal',{c:0xd8d8d0,solid:false});for(var i=-1;i<=1;i+=2){W.box(14+i*4,0,108,.4,4,.4,'metal',{c:0xc83a2a});W.box(14+i*4,0,105.5,.7,1.4,.5,'metal',{c:0xd83a2a});}
+  W.building2(30,114,18,8,3.2,2,{mat:'concrete',c:0xd8b890,doors:{n:[-5,5]},win:true,presets:['house','house'],stairs:'e',safe:true,roofC:0xa87a50});
+  W.billboard(-20,100,0x2a6ac8);W.billboard(36,96,0xd8a020);W.vehicle(10,118,.5,'jeep',0x9a3a2a);W.vehicle(-12,120,2.8,'truck',0x7a7a6a);W.barrels(-8,100,3);
+  W.lootBox('crate',-2,0,104,0);W.lootBox('medbox',28,0,112,0);W.lootBox('bag',34,0,116,0);
+  // north railway with tank cars + station
+  W.railTrack(-128,-110,128,-110);[[-60,0x2a2c30],[-48,0x3a2a24],[-36,0x2a2c30],[40,0xb8b0a0],[52,0x2a2c30]].forEach(function(c){W.tankCar(c[0],-110,false,c[1]);});
+  W.building(-30,-100,12,7,3.6,{mat:'brick',c:0xb88a6a,doors:{s:[0],e:[0]},win:true,preset:'office',roofC:0x7a5a40});W.tower(0,-100,6,true);W.crateStack(-18,-104,3);W.lootBox('weapon',-34,0,-102,0);W.lootBox('crate',46,0,-104,0);
+  // west mesa adobe ruins + relay
+  [[-116,-48],[-104,-52],[-112,-32]].forEach(function(p,i){W.building(p[0],p[1],6,6,3,{mat:'concrete',c:[0xc8a070,0xb89060,0xd8b080][i],doors:{e:[0],n:[0]},win:true,preset:'house',roofC:0xa88a60});});
+  W.mast(-100,-36,24);W.sandbags(-98,-44,PI/2,3);W.lootBox('weapon',-110,0,-40,0);W.lootBox('bag',-118,0,-30,0);
+  W.scatter(10,function(x,z){return Math.max(Math.abs(x),Math.abs(z))>92&&W.clearAt(x,z,2);},function(x,z,r){W.tree(x,z,.9+r()*.4,r()<.5?'palm':'dead');});rocks(W,26,0xb0906a,.3);
+  W.extract('北部铁路',90,-110);W.extract('南部加油站',8,126,'rand');
+  W.espots.push(['rifle',104,-14,8],['rifle',112,-40,10],['heavy',106,-28,6],['rusher',100,20,10],['rifle',0,108,8],['rifle',30,114,8],['rusher',14,112,10],['rifle',-30,-100,8],['rusher',-48,-104,10],['rifle',46,-104,8],['rifle',-110,-42,8],['medic',-104,-48,6]);
+  W.spawns.push({x:-100,z:100},{x:100,z:110});}
+);
+// ---------------- SNOW: south frozen lake huts, east plane crash, west ski lodge, north bunker line ----------------
+expandMap('snow',function(base){return [{t:'pad',x:-10,z:112,w:70,d:26,h:-1.2,fall:10},{t:'pad',x:110,z:20,w:40,d:40,h:base(110,20),fall:10},
+  {t:'pad',x:-108,z:30,w:28,d:24,h:base(-108,30),fall:8},{t:'pad',x:0,z:-110,w:100,d:16,h:base(0,-110),fall:8},
+  {t:'path',pts:[[-24,88,.5],[-60,100,null],[-100,40,null]],w:5,fall:4,road:true},{t:'path',pts:[[50,56,null],[90,40,null],[104,24,null]],w:4,fall:4}];},
+ function(W){
+  W.water(-10,112,64,22,-.95,0xdfeef6,.97);
+  [[-30,108,0x9a3e2c],[-14,116,0x2d5f8f],[4,106,0xc9a12c],[14,118,0x3f6e3a]].forEach(function(h){W.iceHut(h[0],h[1],h[2]);});
+  W.vehicle(-40,118,.4,'jeep',0xe0e4e8);W.barrels(-4,114,2,0x9a2e22);W.lootBox('crate',-26,0,108,0);W.lootBox('bag',8,0,108,0);
+  // crash site
+  W.planeWreck(110,20,.6);W.tent(98,30,0,0xd8dcd8);W.tent(100,8,PI/2,0xb8bcb8);W.crateStack(118,32,3);W.lootBox('weapon',104,0,22,0);W.lootBox('crate',116,0,12,0);W.lootBox('medbox',96,0,26,0);
+  // ski lodge + chairlift
+  W.building2(-108,30,16,10,3.6,2,{mat:'wood',c:0x7a5a3e,doors:{e:[0],s:[0]},win:true,presets:['house','office'],stairs:'n',safe:true,roofC:0xe8ecf0});
+  for(var i=0;i<4;i++)W.mast(-96+i*14,10-i*14,10+i*3);W.vehicle(-96,44,0,'truck',0x5a6a5a);W.lootBox('bag',-110,0,24,0);W.lootBox('toolbox',-100,0,36,0);
+  // north bunker line
+  [-40,-10,20,48].forEach(function(x,i){W.pillbox(x,-108-(i%2)*4,0);});W.fenceSeg(-60,-118,60,-118);W.tower(-56,-104,5,true);W.tower(60,-104,5,true);
+  W.lootBox('weapon',-10,0,-110,0);W.lootBox('crate',20,0,-110,0);W.lootBox('crate',48,0,-112,0);
+  trees(W,90,['pine'],function(x,z){return Math.max(Math.abs(x),Math.abs(z))>88;});rocks(W,16,0x9aa0a8,.5);
+  W.extract('冰湖钓场',-48,122,'rand');W.extract('坠机点',122,40);
+  W.espots.push(['rifle',-20,110,8],['rusher',8,114,10],['rifle',108,20,10],['heavy',112,30,6],['rusher',100,10,10],['rifle',-108,30,8],['rifle',-100,40,8],['rifle',-10,-108,8],['rifle',20,-110,8],['heavy',48,-108,6],['medic',-104,26,6]);
+  W.spawns.push({x:100,z:110},{x:-110,z:-100});}
+);
 // ---- 07_ai.js
 // ===== NAV GRID =====
 function Nav(W){var S=W.S,cs=.5,N=Math.round(S*2/cs);this.S=S;this.cs=cs;this.N=N;var g=new Uint8Array(N*N);g.fill(1);var R=.38;var cH=new Float32Array(N*N);this.cH=cH;
@@ -1671,7 +1806,7 @@ function killEnemy0(e,part,src){e.dead=true;e.state='dead';e.h.flash.visible=fal
  if(e.boss){HUD.toast('首领 '+e.name+' 已被击杀');opBark('boss',true);}else if(src&&src.wname)opBark('kill');if(e.markS)e.markS.visible=false;
  for(var j=0;j<G.enemies.length;j++){var o=G.enemies[j];if(!o.dead&&Math.hypot(o.x-e.x,o.z-e.z)<20)o.alertTo(P.x,P.z,1);}}
 function noise(x,z,r,lvl){for(var i=0;i<G.enemies.length;i++){var e=G.enemies[i];if(e.dead)continue;var d=Math.hypot(e.x-x,e.z-z);if(d<r)e.alertTo(x,z,d<r*.3?lvl:Math.min(lvl,.6));}}
-function spawnEnemies(){var W=G.world,M=G.mode,spots=W.espots.slice(),out=[];var n=Math.round(13*M.enemy);
+function spawnEnemies(){var W=G.world,M=G.mode,spots=W.espots.slice(),out=[];var n=Math.round(17*M.enemy);
  spots.sort(function(){return Math.random()-.5;});var meds=spots.filter(function(s){return s[0]==='medic';}).slice(0,2);spots=meds.concat(spots.filter(function(s){return meds.indexOf(s)<0;}));
  for(var i=0;i<n;i++){var s=spots[i%spots.length],off=i>=spots.length?3:0;var p=G.nav.rndNear(s[1]+off,s[2],Math.min(3,s[3]))||[s[1],s[2]];var t=s[0];if(M.tier>=1&&t==='rifle'&&Math.random()<.25)t='guard';out.push(new Enemy(t,p[0],p[1],{r:s[3]}));}
  var per=W.perches.slice().sort(function(){return Math.random()-.5;});var ns=Math.min(per.length,Math.round(2*M.enemy));
